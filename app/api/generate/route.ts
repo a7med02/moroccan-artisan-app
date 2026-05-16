@@ -1,19 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const SYSTEM_PROMPTS: Record<string, string> = {
-  darija: `أنت خبير في التسويق الرقمي للصناع التقليديين المغاربة. تكتب بالدارجة المغربية.
-اكتب منشور جذاب يتضمن عنوان مميز مع إيموجيات، وصف المنتوج، مميزاته، دعوة للتواصل، وهاشتاغات.`,
-  arabic: `أنت خبير في التسويق الرقمي للحرفيين المغاربة. تكتب بالعربية الفصحى البسيطة.
-اكتب منشوراً جذاباً يتضمن عنوان مميز، وصف المنتج، المميزات، دعوة للتواصل، وهاشتاغات.`,
+  darija: `أنت خبير في التسويق الرقمي للصناع التقليديين المغاربة. تكتب بالدارجة المغربية (العربية العامية المغربية).
+عند تحليل الصورة وإنشاء المنشور:
+- لاحظ المنتوج في الصورة (الشكل، الألوان، المواد، الحرفية)
+- اكتب منشور جذاب يتضمن عنوان مميز مع إيموجيات مناسبة
+- وصف المنتوج بأسلوب بيعي جذاب
+- مميزات المنتوج (الجودة، الصنع اليدوي، المواد)
+- دعوة واضحة للتواصل أو الشراء
+- هاشتاغات بالدارجة والعربية والإنجليزية
+اكتب بأسلوب طبيعي وودي كأنك الحرفي نفسه يتكلم مع زبائنه.`,
+
+  arabic: `أنت خبير في التسويق الرقمي للحرفيين المغاربة. تكتب بالعربية الفصحى البسيطة والواضحة.
+عند تحليل الصورة وإنشاء المنشور:
+- لاحظ المنتج في الصورة (الشكل، الألوان، المواد، الحرفية)
+- اكتب منشوراً جذاباً يتضمن عنوان مميز مع إيموجيات
+- وصف المنتج بأسلوب تسويقي احترافي
+- المميزات الرئيسية (الجودة، الصنع اليدوي، التراث المغربي)
+- دعوة واضحة للتواصل
+- هاشتاغات عربية وإنجليزية`,
+
   french: `Tu es un expert en marketing digital pour les artisans marocains. Tu écris en français.
-Crée une publication engageante avec: titre accrocheur, description du produit, points forts, appel à l'action, hashtags.`,
-  english: `You are a social media marketing expert for Moroccan artisans. Write in English.
-Create an engaging post with: catchy headline, product description, key selling points, call to action, hashtags.`,
+Quand tu analyses l'image et crées la publication:
+- Observe le produit sur la photo (forme, couleurs, matériaux, savoir-faire)
+- Rédige une publication engageante avec un titre accrocheur et des emojis
+- Description du produit basée sur la photo
+- Points forts (qualité, fait main, héritage marocain)
+- Appel à l'action clair
+- Hashtags en français, arabe et anglais`,
+
+  english: `You are a social media marketing expert for Moroccan artisans. You write in English.
+When analyzing the image and creating the post:
+- Observe the product in the photo (shape, colors, materials, craftsmanship)
+- Write an engaging post with an eye-catching headline and emojis
+- Product description based on the photo
+- Key selling points (quality, handmade, Moroccan heritage)
+- Clear call to action
+- Relevant hashtags in English and Arabic`,
 };
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { productName, description, language, platforms } = body;
+  const { productName, description, language, platforms, imageBase64, imageType } = body;
 
   if (!productName) {
     return NextResponse.json({ error: 'productName is required' }, { status: 400 });
@@ -22,38 +50,49 @@ export async function POST(req: NextRequest) {
   const systemPrompt = SYSTEM_PROMPTS[language] ?? SYSTEM_PROMPTS.english;
   const platformList = (platforms as string[]).join(', ');
 
-  let userText = `Product name: ${productName}\n`;
-  if (description) userText += `Details: ${description}\n`;
-  userText += `Target platforms: ${platformList}\n`;
-  userText += `\nWrite a compelling social media post for this Moroccan artisan product.`;
+  let textPrompt = `${systemPrompt}\n\n`;
+  textPrompt += `Product name: ${productName}\n`;
+  if (description) textPrompt += `Details: ${description}\n`;
+  textPrompt += `Target platforms: ${platformList}\n`;
+  textPrompt += imageBase64
+    ? `\nAnalyze the product photo carefully and create a compelling social media post.`
+    : `\nNo image provided. Create a compelling post based on the product name and details.`;
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'HTTP-Referer': 'http://localhost:3000',
-    },
-    body: JSON.stringify({
-      model: 'qwen/qwen3-next-80b-a3b-instruct:free',
-      max_tokens: 1000,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userText },
-      ],
-    }),
-  });
+  // Build parts — text always included, image optional
+  const parts: object[] = [];
+
+  if (imageBase64 && imageType?.startsWith('image/')) {
+    parts.push({
+      inlineData: {
+        mimeType: imageType,
+        data: imageBase64,
+      },
+    });
+  }
+
+  parts.push({ text: textPrompt });
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+      }),
+    }
+  );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     return NextResponse.json(
-      { error: err?.error?.message ?? `OpenRouter error ${res.status}` },
+      { error: err?.error?.message ?? `Gemini error ${res.status}` },
       { status: res.status }
     );
   }
 
   const data = await res.json();
-  const text = data.choices?.[0]?.message?.content ?? '';
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
   return NextResponse.json({ post: text });
 }

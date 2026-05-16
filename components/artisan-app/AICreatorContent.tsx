@@ -138,41 +138,8 @@ export function AICreatorContent() {
 
   // ── AI Generation ───────────────────────────────────────────────────────────
 
-  const callClaudeAPI = async () => {
-    const systemPrompt = SYSTEM_PROMPTS[language] || SYSTEM_PROMPTS.english;
-    const platformList = Array.from(selectedPlatforms).join(', ');
-
-    let userPrompt = `Product name: ${formData.productName}\n`;
-    if (formData.description) userPrompt += `Additional details: ${formData.description}\n`;
-    userPrompt += `Target platforms: ${platformList}\n`;
-
-    if (formData.mediaBase64 && formData.mediaType?.startsWith('image/')) {
-      userPrompt += `\nPlease analyze the product photo carefully and create a compelling social media post.`;
-    } else {
-      userPrompt += `\nNo image provided. Create an engaging post based on the product name and details.`;
-    }
-
-    // Build messages array — with or without image
-    type MessageContent =
-      | { type: 'text'; text: string }
-      | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
-
-    const content: MessageContent[] = [];
-
-    if (formData.mediaBase64 && formData.mediaType?.startsWith('image/')) {
-      content.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: formData.mediaType,
-          data: formData.mediaBase64,
-        },
-      });
-    }
-
-    content.push({ type: 'text', text: userPrompt });
-
-    const response = await fetch('/api/generate', {
+const callGeminiAPI = async (): Promise<string> => {
+  const response = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -180,27 +147,27 @@ export function AICreatorContent() {
       description: formData.description,
       language,
       platforms: Array.from(selectedPlatforms),
-      imageBase64: formData.mediaBase64,
+      imageBase64: formData.mediaBase64,   // sent if user uploaded a photo
       imageType: formData.mediaType,
     }),
   });
-  const data = await response.json();
-  setGeneratedResult({ post: data.post });
-    const text = (data.content as Array<{ type: string; text?: string }>)
-      ?.map(c => c.text ?? '')
-      .join('') ?? '';
 
-    return text;
-  };
+  const data = await response.json();
+
+  if (!response.ok) throw new Error(data.error ?? 'Generation failed');
+
+  return data.post as string;
+};
 
 const handleGenerate = async () => {
   if (!formData.productName.trim()) return;
   setIsLoading(true);
   setError(null);
+  setGeneratedResult(null);
   setStep(3);
 
   try {
-    const post = await callClaudeAPI();
+    const post = await callGeminiAPI();
     setGeneratedResult({ post });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Something went wrong.';
@@ -210,11 +177,11 @@ const handleGenerate = async () => {
   }
 };
 
-  const handleRegenerate = async () => {
-    setGeneratedResult(null);
-    setError(null);
-    await handleGenerate();
-  };
+const handleRegenerate = async () => {
+  setGeneratedResult(null);
+  setError(null);
+  await handleGenerate();
+};
 
   const handleCopy = async () => {
     if (!generatedResult?.post) return;

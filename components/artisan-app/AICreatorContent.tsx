@@ -1,10 +1,13 @@
-'use client';
+﻿'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useLanguage, translations } from '@/app/context/LanguageContext';
-import { Upload, ChevronRight, Loader, Play, Copy, RefreshCw, Check, Send, AlertCircle, Sparkles } from 'lucide-react';
+import {
+  Upload, ChevronRight, Loader, Play, Copy, RefreshCw, Check,
+  Send, AlertCircle, Sparkles, Mic, MicOff, Square,
+} from 'lucide-react';
 
 type Platform = 'instagram' | 'facebook' | 'tiktok' | 'whatsapp';
 
@@ -26,9 +29,58 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   whatsapp: 'WhatsApp',
 };
 
+// ── Voice recorder hook ─────────────────────────────────────────────────────
+type RecordingState = 'idle' | 'recording' | 'transcribing';
 
+function useVoiceRecorder(onTranscript: (text: string) => void) {
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
+  const startRecording = async () => {
+    setVoiceError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        setRecordingState('transcribing');
+        try {
+          const form = new FormData();
+          form.append('audio', blob, 'recording.webm');
+          const res = await fetch('/api/transcribe', { method: 'POST', body: form });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? 'Transcription failed');
+          onTranscript(data.transcript);
+        } catch (err) {
+          setVoiceError(err instanceof Error ? err.message : 'Transcription failed');
+        } finally {
+          setRecordingState('idle');
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecordingState('recording');
+    } catch {
+      setVoiceError('Microphone access denied. Please allow mic permissions.');
+      setRecordingState('idle');
+    }
+  };
 
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+  };
+
+  return { recordingState, voiceError, startRecording, stopRecording };
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
 export function AICreatorContent() {
   const { language } = useLanguage();
   const t = translations[language];
@@ -46,9 +98,14 @@ export function AICreatorContent() {
   });
   const [enhancedImage, setEnhancedImage] = useState<string | null>(null);
   const [generatedResult, setGeneratedResult] = useState<GeneratedResult | null>(null);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
 
-  // ── File upload ────────────────────────────────────────────────────────────
+  // ── Voice recorder ──────────────────────────────────────────────────────
+  const { recordingState, voiceError, startRecording, stopRecording } = useVoiceRecorder(
+    (text) => setVoiceTranscript((prev) => (prev ? `${prev} ${text}` : text))
+  );
 
+  // ── File upload ─────────────────────────────────────────────────────────
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -65,10 +122,9 @@ export function AICreatorContent() {
     reader.readAsDataURL(file);
   };
 
-  // ── Platform toggle ────────────────────────────────────────────────────────
-
+  // ── Platform toggle ─────────────────────────────────────────────────────
   const togglePlatform = (platform: Platform) => {
-    setSelectedPlatforms(prev => {
+    setSelectedPlatforms((prev) => {
       const next = new Set(prev);
       if (next.has(platform)) {
         if (next.size === 1) return prev;
@@ -79,43 +135,38 @@ export function AICreatorContent() {
       return next;
     });
   };
-  // -- publich to social media ----
-const [isPublishing, setIsPublishing] = useState(false);
-const [publishSuccess, setPublishSuccess] = useState(false);
 
-const handlePublishToInstagram = async () => {
-  if (!generatedResult?.post) return;
-  setIsPublishing(true);
+  // ── Publish ─────────────────────────────────────────────────────────────
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState(false);
 
-  try {
-    const res = await fetch('/api/share-post', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        caption: generatedResult.post,
-        // Send enhanced if available, otherwise fallback to user original upload
-        imageBase64: enhancedImage ? enhancedImage.split(',')[1] : formData.mediaBase64,
-        imageType: formData.mediaType
-      }),
-    });
-
-    if (res.ok) {
-      setPublishSuccess(true);
-    } else {
-      alert('Could not dispatch agents to Make.com');
+  const handlePublishToInstagram = async () => {
+    if (!generatedResult?.post) return;
+    setIsPublishing(true);
+    try {
+      const res = await fetch('/api/share-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caption: generatedResult.post,
+          imageBase64: enhancedImage ? enhancedImage.split(',')[1] : formData.mediaBase64,
+          imageType: formData.mediaType,
+        }),
+      });
+      if (res.ok) {
+        setPublishSuccess(true);
+      } else {
+        alert('Could not dispatch agents to Make.com');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsPublishing(false);
     }
-  } catch (err) {
-    console.error(err);
-  } finally {
-    setIsPublishing(false);
-  }
-};
+  };
 
-
-
-  // ── Generate ───────────────────────────────────────────────────────────────
-
-  const callGeminiAPI = async (): Promise<string> => {
+  // ── Generate ────────────────────────────────────────────────────────────
+  const callGroqAPI = async (): Promise<string> => {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -124,6 +175,7 @@ const handlePublishToInstagram = async () => {
         platforms: Array.from(selectedPlatforms),
         imageBase64: formData.mediaBase64,
         imageType: formData.mediaType,
+        voiceTranscript: voiceTranscript.trim() || undefined,
       }),
     });
     const data = await response.json();
@@ -131,46 +183,22 @@ const handlePublishToInstagram = async () => {
     return data.post as string;
   };
 
-const handleGenerate = async () => {
-  setIsLoading(true);
-  setError(null);
-  setGeneratedResult(null);
-  setEnhancedImage(null);
-  setStep(3);
+  const handleGenerate = async () => {
+    setIsLoading(true);
+    setError(null);
+    setGeneratedResult(null);
+    setEnhancedImage(null);
+    setStep(3);
 
-  try {
-    // Run both in parallel
-    const promises: [Promise<string>, Promise<string | null>] = [
-      // 1. Generate post text
-      callGeminiAPI(),
-      // 2. Enhance image (only if user uploaded one)
-      formData.mediaBase64 && formData.mediaType?.startsWith('image/')
-        ? fetch('/api/enhance-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              imageBase64: formData.mediaBase64,
-              imageType: formData.mediaType,
-            }),
-          })
-            .then(r => r.json())
-            .then(d => d.imageBase64
-              ? `data:${d.mimeType};base64,${d.imageBase64}`
-              : null
-            )
-            .catch(() => null) // don't fail the whole flow if enhancement fails
-        : Promise.resolve(null),
-    ];
-
-    const [post, enhanced] = await Promise.all(promises);
-    setGeneratedResult({ post });
-    setEnhancedImage(enhanced);
-  } catch (err: unknown) {
-    setError(err instanceof Error ? err.message : 'Something went wrong.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+    try {
+      const post = await callGroqAPI();
+      setGeneratedResult({ post });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleRegenerate = async () => {
     setGeneratedResult(null);
@@ -190,27 +218,27 @@ const handleGenerate = async () => {
     window.open(`https://wa.me/?text=${encodeURIComponent(generatedResult.post)}`, '_blank');
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background pb-24 px-4 pt-4">
       <h1 className="text-3xl font-bold text-foreground mb-6">{t.createNewPost}</h1>
 
       {/* Progress bar */}
       <div className="flex gap-2 mb-6">
-        {[1, 2, 3].map(n => (
+        {[1, 2, 3].map((n) => (
           <div key={n} className={`flex-1 h-2 rounded-full transition-colors ${n <= step ? 'bg-primary' : 'bg-muted'}`} />
         ))}
       </div>
 
-      {/* ── Step 1: Upload photo ── */}
+      {/* ── Step 1: Upload photo + Voice description ── */}
       {step === 1 && (
         <Card className="border-0 bg-card p-6 mb-6">
           <h2 className="text-xl font-semibold text-foreground mb-2">{t.step1}</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            📸 Just upload your product photo — AI will handle the rest
+            📸 Upload your product photo, then optionally describe it by voice
           </p>
 
+          {/* Photo upload */}
           {!formData.mediaPreview ? (
             <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-10 cursor-pointer hover:border-primary transition-colors">
               <Upload className="text-muted-foreground mb-3" size={44} />
@@ -234,7 +262,71 @@ const handleGenerate = async () => {
             </div>
           )}
 
-          {formData.media && (
+          {/* ── Voice description section ── */}
+          <div className="mt-5 border border-border rounded-xl p-4 bg-muted/30">
+            <p className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+              🎙️ Describe your product by voice <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+            </p>
+
+            {/* Mic button */}
+            <div className="flex items-center gap-3 mb-3">
+              {recordingState === 'idle' && (
+                <button
+                  id="mic-start-btn"
+                  onClick={startRecording}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-all active:scale-95"
+                >
+                  <Mic size={16} /> Start Recording
+                </button>
+              )}
+              {recordingState === 'recording' && (
+                <button
+                  id="mic-stop-btn"
+                  onClick={stopRecording}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 transition-all animate-pulse"
+                >
+                  <Square size={16} /> Stop Recording
+                </button>
+              )}
+              {recordingState === 'transcribing' && (
+                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader size={16} className="animate-spin" /> Transcribing with Groq Whisper…
+                </span>
+              )}
+              {recordingState === 'recording' && (
+                <span className="flex items-center gap-2 text-sm text-destructive font-medium">
+                  <MicOff size={14} className="animate-pulse" /> Recording…
+                </span>
+              )}
+            </div>
+
+            {voiceError && (
+              <p className="text-xs text-destructive mb-2 flex items-center gap-1">
+                <AlertCircle size={12} /> {voiceError}
+              </p>
+            )}
+
+            {/* Transcript textarea */}
+            <textarea
+              id="voice-transcript"
+              value={voiceTranscript}
+              onChange={(e) => setVoiceTranscript(e.target.value)}
+              placeholder="Your voice transcript will appear here… or type manually"
+              rows={3}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+            />
+            {voiceTranscript && (
+              <button
+                onClick={() => setVoiceTranscript('')}
+                className="text-xs text-muted-foreground hover:text-destructive mt-1 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Next button — available even without image if there is a transcript */}
+          {(formData.media || voiceTranscript.trim()) && (
             <Button onClick={() => setStep(2)} className="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground">
               Next <ChevronRight size={20} />
             </Button>
@@ -247,17 +339,24 @@ const handleGenerate = async () => {
         <Card className="border-0 bg-card p-6 mb-6">
           <h2 className="text-xl font-semibold text-foreground mb-2">Where to post?</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Select your platforms and let Gemini write your post
+            Select your platforms and let Groq AI write your post
           </p>
 
-          {/* Photo thumbnail */}
           {formData.mediaPreview && formData.mediaType?.startsWith('image/') && (
             <img src={formData.mediaPreview} alt="Product" className="w-full h-36 object-cover rounded-lg mb-4" />
           )}
 
+          {/* Voice transcript preview */}
+          {voiceTranscript.trim() && (
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 mb-4">
+              <p className="text-xs font-medium text-primary mb-1">🎙️ Voice description included:</p>
+              <p className="text-sm text-foreground line-clamp-2">{voiceTranscript}</p>
+            </div>
+          )}
+
           {/* Platform selector */}
           <div className="flex flex-wrap gap-2 mb-6">
-            {(Object.keys(PLATFORM_LABELS) as Platform[]).map(platform => (
+            {(Object.keys(PLATFORM_LABELS) as Platform[]).map((platform) => (
               <button
                 key={platform}
                 onClick={() => togglePlatform(platform)}
@@ -293,6 +392,7 @@ const handleGenerate = async () => {
             <div className="flex flex-col items-center justify-center py-12">
               <Loader className="animate-spin text-primary mb-3" size={40} />
               <p className="text-muted-foreground">{t.generating}</p>
+              <p className="text-xs text-muted-foreground mt-1">Powered by Groq · LLaMA-4 Scout</p>
             </div>
           )}
 
@@ -311,28 +411,14 @@ const handleGenerate = async () => {
 
           {!isLoading && !error && generatedResult && (
             <div className="space-y-4">
-              {/* Enhanced image (preferred) or original fallback */}
-              {(enhancedImage || formData.mediaPreview) && (
+              {/* Image */}
+              {formData.mediaPreview && (
                 <div className="relative">
                   <img
-                    src={enhancedImage ?? formData.mediaPreview!}
+                    src={formData.mediaPreview}
                     alt="Product"
                     className="w-full h-48 object-cover rounded-lg"
                   />
-                  {enhancedImage && (
-                    <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
-                      ✨ AI Enhanced
-                    </span>
-                  )}
-                  {/* Show original toggle if we have both */}
-                  {enhancedImage && formData.mediaPreview && (
-                    <button
-                      onClick={() => setEnhancedImage(prev => prev ? null : enhancedImage)}
-                      className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full"
-                    >
-                      View original
-                    </button>
-                  )}
                 </div>
               )}
 
@@ -364,16 +450,13 @@ const handleGenerate = async () => {
 
               <div className="flex gap-3 pt-2">
                 <Button onClick={() => setStep(2)} variant="outline" className="flex-1">{t.back}</Button>
-                <div className="flex gap-3 pt-2">
-                <Button onClick={() => setStep(2)} variant="outline" className="flex-1">{t.back}</Button>
-                <Button 
-                  onClick={handlePublishToInstagram} 
+                <Button
+                  onClick={handlePublishToInstagram}
                   disabled={isPublishing || publishSuccess}
                   className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   {isPublishing ? 'Agents Deploying...' : publishSuccess ? '🚀 Live on Instagram!' : t.publish}
                 </Button>
-              </div>
               </div>
             </div>
           )}

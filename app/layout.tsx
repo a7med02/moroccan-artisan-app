@@ -7,7 +7,7 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Artisan Hub',
+  title: 'Rural Ai',
   description: 'Moroccan artisans marketplace',
   generator: 'v0.app',
   icons: {

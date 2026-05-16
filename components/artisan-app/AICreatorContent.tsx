@@ -4,9 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useLanguage, translations } from '@/app/context/LanguageContext';
-import { Upload, ChevronRight, Loader, Play, Copy, RefreshCw, Check, Send, AlertCircle } from 'lucide-react';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { Upload, ChevronRight, Loader, Play, Copy, RefreshCw, Check, Send, AlertCircle, Sparkles } from 'lucide-react';
 
 type Platform = 'instagram' | 'facebook' | 'tiktok' | 'whatsapp';
 
@@ -15,61 +13,11 @@ interface FormData {
   mediaPreview: string | null;
   mediaBase64: string | null;
   mediaType: string | null;
-  productName: string;
-  description: string;
 }
 
 interface GeneratedResult {
   post: string;
 }
-
-// ─── System prompts per language ──────────────────────────────────────────────
-
-const SYSTEM_PROMPTS: Record<string, string> = {
-  darija: `أنت خبير في التسويق الرقمي للصناع التقليديين المغاربة. تكتب بالدارجة المغربية (العربية العامية المغربية).
-عند تحليل الصورة وإنشاء المنشور:
-1. لاحظ المنتوج في الصورة (الشكل، الألوان، المواد، الحرفية)
-2. اكتب منشور جذاب يتضمن:
-   - عنوان مميز مع إيموجيات مناسبة
-   - وصف المنتوج من الصورة بأسلوب بيعي جذاب
-   - مميزات المنتوج (الجودة، الصنع اليدوي، المواد)
-   - دعوة واضحة للتواصل أو الشراء
-   - هاشتاغات بالدارجة والعربية والإنجليزية
-اكتب بأسلوب طبيعي وودي كأنك الحرفي نفسه يتكلم مع زبائنه.`,
-
-  arabic: `أنت خبير في التسويق الرقمي للحرفيين المغاربة. تكتب بالعربية الفصحى البسيطة والواضحة.
-عند تحليل الصورة وإنشاء المنشور:
-1. لاحظ المنتج في الصورة (الشكل، الألوان، المواد، الحرفية)
-2. اكتب منشوراً جذاباً يتضمن:
-   - عنوان مميز مع إيموجيات
-   - وصف المنتج بأسلوب تسويقي احترافي
-   - المميزات الرئيسية (الجودة، الصنع اليدوي، التراث المغربي)
-   - دعوة واضحة للتواصل
-   - هاشتاغات عربية وإنجليزية
-اكتب بأسلوب احترافي وودي في نفس الوقت.`,
-
-  french: `Tu es un expert en marketing digital pour les artisans marocains. Tu écris en français.
-Quand tu analyses l'image et crées la publication:
-1. Observe le produit sur la photo (forme, couleurs, matériaux, savoir-faire)
-2. Rédige une publication engageante incluant:
-   - Un titre accrocheur avec des emojis
-   - Description du produit basée sur la photo
-   - Points forts (qualité, fait main, héritage marocain)
-   - Appel à l'action clair
-   - Hashtags en français, arabe et anglais
-Ton naturel, chaleureux, authentique — comme l'artisan qui parle à ses clients.`,
-
-  english: `You are a social media marketing expert for Moroccan artisans. You write in English.
-When analyzing the image and creating the post:
-1. Observe the product in the photo (shape, colors, materials, craftsmanship)
-2. Write an engaging post including:
-   - Eye-catching headline with emojis
-   - Product description based on the photo
-   - Key selling points (quality, handmade, Moroccan heritage)
-   - Clear call to action
-   - Relevant hashtags in English and Arabic
-Friendly, authentic tone — like the artisan talking directly to their customers.`,
-};
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   instagram: 'Instagram',
@@ -78,7 +26,8 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   whatsapp: 'WhatsApp',
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+
+
 
 export function AICreatorContent() {
   const { language } = useLanguage();
@@ -89,45 +38,40 @@ export function AICreatorContent() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<Platform>>(new Set(['instagram']));
-
   const [formData, setFormData] = useState<FormData>({
     media: null,
     mediaPreview: null,
     mediaBase64: null,
     mediaType: null,
-    productName: '',
-    description: '',
   });
+  const [enhancedImage, setEnhancedImage] = useState<string | null>(null);
   const [generatedResult, setGeneratedResult] = useState<GeneratedResult | null>(null);
 
-  // ── File upload ─────────────────────────────────────────────────────────────
+  // ── File upload ────────────────────────────────────────────────────────────
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onloadend = () => {
       const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(',')[1];
-      setFormData(prev => ({
-        ...prev,
+      setFormData({
         media: file,
         mediaPreview: dataUrl,
-        mediaBase64: base64,
+        mediaBase64: dataUrl.split(',')[1],
         mediaType: file.type,
-      }));
+      });
     };
     reader.readAsDataURL(file);
   };
 
-  // ── Platform toggle ─────────────────────────────────────────────────────────
+  // ── Platform toggle ────────────────────────────────────────────────────────
 
   const togglePlatform = (platform: Platform) => {
     setSelectedPlatforms(prev => {
       const next = new Set(prev);
       if (next.has(platform)) {
-        if (next.size === 1) return prev; // keep at least one
+        if (next.size === 1) return prev;
         next.delete(platform);
       } else {
         next.add(platform);
@@ -135,95 +79,141 @@ export function AICreatorContent() {
       return next;
     });
   };
+  // -- publich to social media ----
+const [isPublishing, setIsPublishing] = useState(false);
+const [publishSuccess, setPublishSuccess] = useState(false);
 
-  // ── AI Generation ───────────────────────────────────────────────────────────
+const handlePublishToInstagram = async () => {
+  if (!generatedResult?.post) return;
+  setIsPublishing(true);
 
-const callGeminiAPI = async (): Promise<string> => {
-  const response = await fetch('/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      productName: formData.productName,
-      description: formData.description,
-      language,
-      platforms: Array.from(selectedPlatforms),
-      imageBase64: formData.mediaBase64,   // sent if user uploaded a photo
-      imageType: formData.mediaType,
-    }),
-  });
+  try {
+    const res = await fetch('/api/share-post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caption: generatedResult.post,
+        // Send enhanced if available, otherwise fallback to user original upload
+        imageBase64: enhancedImage ? enhancedImage.split(',')[1] : formData.mediaBase64,
+        imageType: formData.mediaType
+      }),
+    });
 
-  const data = await response.json();
-
-  if (!response.ok) throw new Error(data.error ?? 'Generation failed');
-
-  return data.post as string;
+    if (res.ok) {
+      setPublishSuccess(true);
+    } else {
+      alert('Could not dispatch agents to Make.com');
+    }
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setIsPublishing(false);
+  }
 };
 
+
+
+  // ── Generate ───────────────────────────────────────────────────────────────
+
+  const callGeminiAPI = async (): Promise<string> => {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language,
+        platforms: Array.from(selectedPlatforms),
+        imageBase64: formData.mediaBase64,
+        imageType: formData.mediaType,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? 'Generation failed');
+    return data.post as string;
+  };
+
 const handleGenerate = async () => {
-  if (!formData.productName.trim()) return;
   setIsLoading(true);
   setError(null);
   setGeneratedResult(null);
+  setEnhancedImage(null);
   setStep(3);
 
   try {
-    const post = await callGeminiAPI();
+    // Run both in parallel
+    const promises: [Promise<string>, Promise<string | null>] = [
+      // 1. Generate post text
+      callGeminiAPI(),
+      // 2. Enhance image (only if user uploaded one)
+      formData.mediaBase64 && formData.mediaType?.startsWith('image/')
+        ? fetch('/api/enhance-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: formData.mediaBase64,
+              imageType: formData.mediaType,
+            }),
+          })
+            .then(r => r.json())
+            .then(d => d.imageBase64
+              ? `data:${d.mimeType};base64,${d.imageBase64}`
+              : null
+            )
+            .catch(() => null) // don't fail the whole flow if enhancement fails
+        : Promise.resolve(null),
+    ];
+
+    const [post, enhanced] = await Promise.all(promises);
     setGeneratedResult({ post });
+    setEnhancedImage(enhanced);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Something went wrong.';
-    setError(message);
+    setError(err instanceof Error ? err.message : 'Something went wrong.');
   } finally {
     setIsLoading(false);
   }
 };
 
-const handleRegenerate = async () => {
-  setGeneratedResult(null);
-  setError(null);
-  await handleGenerate();
-};
+  const handleRegenerate = async () => {
+    setGeneratedResult(null);
+    setError(null);
+    await handleGenerate();
+  };
 
   const handleCopy = async () => {
     if (!generatedResult?.post) return;
-    try {
-      await navigator.clipboard.writeText(generatedResult.post);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback: select text manually
-    }
+    await navigator.clipboard.writeText(generatedResult.post);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleWhatsAppShare = () => {
     if (!generatedResult?.post) return;
-    const encoded = encodeURIComponent(generatedResult.post);
-    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(generatedResult.post)}`, '_blank');
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-background pb-24 px-4 pt-4">
       <h1 className="text-3xl font-bold text-foreground mb-6">{t.createNewPost}</h1>
 
-      {/* Step progress bar */}
+      {/* Progress bar */}
       <div className="flex gap-2 mb-6">
         {[1, 2, 3].map(n => (
-          <div
-            key={n}
-            className={`flex-1 h-2 rounded-full transition-colors ${n <= step ? 'bg-primary' : 'bg-muted'}`}
-          />
+          <div key={n} className={`flex-1 h-2 rounded-full transition-colors ${n <= step ? 'bg-primary' : 'bg-muted'}`} />
         ))}
       </div>
 
-      {/* ── Step 1: Upload ── */}
+      {/* ── Step 1: Upload photo ── */}
       {step === 1 && (
         <Card className="border-0 bg-card p-6 mb-6">
-          <h2 className="text-xl font-semibold text-foreground mb-4">{t.step1}</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-2">{t.step1}</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            📸 Just upload your product photo — AI will handle the rest
+          </p>
 
           {!formData.mediaPreview ? (
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:border-primary transition-colors">
-              <Upload className="text-muted-foreground mb-2" size={40} />
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-10 cursor-pointer hover:border-primary transition-colors">
+              <Upload className="text-muted-foreground mb-3" size={44} />
               <span className="text-foreground font-medium">{t.uploadMedia}</span>
               <span className="text-sm text-muted-foreground mt-1">{t.imageVideo}</span>
               <input type="file" accept="image/*,video/*" onChange={handleMediaUpload} className="hidden" />
@@ -235,100 +225,70 @@ const handleRegenerate = async () => {
               ) : (
                 <div className="relative w-full h-64 bg-muted rounded-lg flex items-center justify-center mb-4">
                   <Play className="text-primary" size={48} />
-                  <span className="absolute bottom-2 right-2 bg-primary text-primary-foreground px-2 py-1 rounded text-xs">
-                    {t.imageVideo}
-                  </span>
                 </div>
               )}
-              <label className="flex items-center justify-center border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary transition-colors">
-                <span className="text-sm text-muted-foreground">{t.uploadMedia}</span>
+              <label className="flex items-center justify-center border-2 border-dashed border-border rounded-lg p-3 cursor-pointer hover:border-primary transition-colors">
+                <span className="text-sm text-muted-foreground">Change photo</span>
                 <input type="file" accept="image/*,video/*" onChange={handleMediaUpload} className="hidden" />
               </label>
             </div>
           )}
 
           {formData.media && (
-            <Button
-              onClick={() => setStep(2)}
-              className="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              {t.step2} <ChevronRight size={20} />
+            <Button onClick={() => setStep(2)} className="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground">
+              Next <ChevronRight size={20} />
             </Button>
           )}
         </Card>
       )}
 
-      {/* ── Step 2: Product Details ── */}
+      {/* ── Step 2: Pick platforms + generate ── */}
       {step === 2 && (
         <Card className="border-0 bg-card p-6 mb-6">
-          <h2 className="text-xl font-semibold text-foreground mb-4">{t.step2}</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-2">Where to post?</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Select your platforms and let Gemini write your post
+          </p>
 
-          <div className="space-y-4">
-            {/* Product name */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">{t.productName}</label>
-              <input
-                type="text"
-                placeholder={t.productNamePlaceholder}
-                value={formData.productName}
-                onChange={e => setFormData(prev => ({ ...prev, productName: e.target.value }))}
-                className="w-full px-4 py-3 rounded-lg border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
+          {/* Photo thumbnail */}
+          {formData.mediaPreview && formData.mediaType?.startsWith('image/') && (
+            <img src={formData.mediaPreview} alt="Product" className="w-full h-36 object-cover rounded-lg mb-4" />
+          )}
 
-            {/* Description */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">{t.description}</label>
-              <textarea
-                placeholder={t.descriptionPlaceholder}
-                value={formData.description}
-                onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                className="w-full px-4 py-3 rounded-lg border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none h-24"
-              />
-            </div>
-
-            {/* Platform selector */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Post for</label>
-              <div className="flex flex-wrap gap-2">
-                {(Object.keys(PLATFORM_LABELS) as Platform[]).map(platform => (
-                  <button
-                    key={platform}
-                    onClick={() => togglePlatform(platform)}
-                    className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                      selectedPlatforms.has(platform)
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-background text-foreground border-border hover:border-primary'
-                    }`}
-                  >
-                    {PLATFORM_LABELS[platform]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button onClick={() => setStep(1)} variant="outline" className="flex-1">
-                {t.back}
-              </Button>
-              <Button
-                onClick={handleGenerate}
-                disabled={!formData.productName.trim()}
-                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50"
+          {/* Platform selector */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {(Object.keys(PLATFORM_LABELS) as Platform[]).map(platform => (
+              <button
+                key={platform}
+                onClick={() => togglePlatform(platform)}
+                className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+                  selectedPlatforms.has(platform)
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background text-foreground border-border hover:border-primary'
+                }`}
               >
-                {t.generateWithAI}
-              </Button>
-            </div>
+                {PLATFORM_LABELS[platform]}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-3">
+            <Button onClick={() => setStep(1)} variant="outline" className="flex-1">{t.back}</Button>
+            <Button
+              onClick={handleGenerate}
+              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
+            >
+              <Sparkles size={16} /> {t.generateWithAI}
+            </Button>
           </div>
         </Card>
       )}
 
-      {/* ── Step 3: AI Result ── */}
+      {/* ── Step 3: Result ── */}
       {step === 3 && (
         <Card className="border-0 bg-card p-6 mb-6">
           <h2 className="text-xl font-semibold text-foreground mb-4">{t.step3}</h2>
 
-          {/* Loading */}
           {isLoading && (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader className="animate-spin text-primary mb-3" size={40} />
@@ -336,7 +296,6 @@ const handleRegenerate = async () => {
             </div>
           )}
 
-          {/* Error */}
           {!isLoading && error && (
             <div className="space-y-4">
               <div className="flex items-start gap-3 bg-destructive/10 text-destructive rounded-lg p-4">
@@ -345,22 +304,37 @@ const handleRegenerate = async () => {
               </div>
               <div className="flex gap-3">
                 <Button onClick={() => setStep(2)} variant="outline" className="flex-1">{t.back}</Button>
-                <Button onClick={handleRegenerate} className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">
-                  Retry
-                </Button>
+                <Button onClick={handleRegenerate} className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">Retry</Button>
               </div>
             </div>
           )}
 
-          {/* Result */}
           {!isLoading && !error && generatedResult && (
             <div className="space-y-4">
-              {/* Image preview */}
-              {formData.mediaPreview && formData.mediaType?.startsWith('image/') && (
-                <img src={formData.mediaPreview} alt="Product" className="w-full h-48 object-cover rounded-lg" />
+              {/* Enhanced image (preferred) or original fallback */}
+              {(enhancedImage || formData.mediaPreview) && (
+                <div className="relative">
+                  <img
+                    src={enhancedImage ?? formData.mediaPreview!}
+                    alt="Product"
+                    className="w-full h-48 object-cover rounded-lg"
+                  />
+                  {enhancedImage && (
+                    <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
+                      ✨ AI Enhanced
+                    </span>
+                  )}
+                  {/* Show original toggle if we have both */}
+                  {enhancedImage && formData.mediaPreview && (
+                    <button
+                      onClick={() => setEnhancedImage(prev => prev ? null : enhancedImage)}
+                      className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full"
+                    >
+                      View original
+                    </button>
+                  )}
+                </div>
               )}
-
-
 
               {/* Generated post */}
               <div>
@@ -372,45 +346,34 @@ const handleRegenerate = async () => {
                 </div>
               </div>
 
-              {/* Action buttons */}
+              {/* Actions */}
               <div className="flex gap-2 flex-wrap">
-                <Button
-                  onClick={handleCopy}
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-1.5"
-                >
+                <Button onClick={handleCopy} variant="outline" size="sm" className="flex items-center gap-1.5">
                   {copied ? <Check size={15} /> : <Copy size={15} />}
                   {copied ? 'Copied!' : 'Copy'}
                 </Button>
-
-                <Button
-                  onClick={handleRegenerate}
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-1.5"
-                >
+                <Button onClick={handleRegenerate} variant="outline" size="sm" className="flex items-center gap-1.5">
                   <RefreshCw size={15} /> Regenerate
                 </Button>
-
                 {selectedPlatforms.has('whatsapp') && (
-                  <Button
-                    onClick={handleWhatsAppShare}
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-1.5 text-green-600 border-green-200 hover:bg-green-50"
-                  >
+                  <Button onClick={handleWhatsAppShare} variant="outline" size="sm" className="flex items-center gap-1.5 text-green-600 border-green-200 hover:bg-green-50">
                     <Send size={15} /> WhatsApp
                   </Button>
                 )}
               </div>
 
-              {/* Nav */}
               <div className="flex gap-3 pt-2">
                 <Button onClick={() => setStep(2)} variant="outline" className="flex-1">{t.back}</Button>
-                <Button className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">
-                  {t.publish}
+                <div className="flex gap-3 pt-2">
+                <Button onClick={() => setStep(2)} variant="outline" className="flex-1">{t.back}</Button>
+                <Button 
+                  onClick={handlePublishToInstagram} 
+                  disabled={isPublishing || publishSuccess}
+                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  {isPublishing ? 'Agents Deploying...' : publishSuccess ? '🚀 Live on Instagram!' : t.publish}
                 </Button>
+              </div>
               </div>
             </div>
           )}
